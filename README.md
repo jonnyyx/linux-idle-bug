@@ -44,10 +44,10 @@ Placing Thread3 on Core1 <<<<<< DEBUG stuff to check placement of Threads....
 Placing Thread4 on Core2
 ....
 
-Taking mean+variance = 133.922800us + 433.608221us = 567.531021us as upper limit!      <<<< determining a limit for counter below
+Taking mean+variance = 133.922800us + 433.608221us = 567.531021us as upper limit!
 ################## RESULTS ########################
 #Threads = 20, #Iterations= 5000
-Min: 55.000000us, Max: 30714.000000us        <<<< MAX ) 30ms!! When MAIN_THREAD is on CPU0 this number is way higher than when MAIN_THREAD runs on a different core!
+Min: 55.000000us, Max: 30714.000000us        Max value is measured with 30ms.
 Mean: 133.922800us variance 433.608221us
 Rundtimes above limit(567.531021us): 1
 ###################################################

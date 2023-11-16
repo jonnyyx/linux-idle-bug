@@ -29,4 +29,4 @@ if __name__ == "__main__":
     #build_test('testTurboRoundtrip.c', '', compiler_intel, '')
     #build_test('testTurboRoundtrip.c', '', compiler_arm, 'arm_')
     #build_test('test.c', '', compiler_intel, '')
-    build_test('test.c', '', compiler_arm, 'arm_')
+    build_test('../src/test.c', '', compiler_arm, 'arm_')

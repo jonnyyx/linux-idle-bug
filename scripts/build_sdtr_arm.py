@@ -16,10 +16,8 @@ def build_test(name, flags, compiler, out_prefix):
         print('requirement tag not found')
         #return
     requires = lines[1].replace(requirement_tag,'').replace('\n','').replace('\r','')
-    print(requires)
     c_sources = name + ' ' + requires
     cmd = compiler + ' ' + c_sources + ' ' + flags + ' -o ' + out_prefix + name.replace('.c','')
-    print(cmd)
     process = subprocess.Popen(cmd, stdout=subprocess.PIPE, shell=True, executable='/bin/bash')
     output, error = process.communicate()
     print(output)
@@ -30,4 +28,4 @@ if __name__ == "__main__":
     #build_test('testTurboRoundtrip.c', '', compiler_intel, '')
     #build_test('testTurboRoundtrip.c', '', compiler_arm, 'arm_')
     #build_test('test.c', '', compiler_intel, '')
-    build_test('test.c', '', compiler_arm, 'arm_')
+    build_test('../src/test.c', '', compiler_arm, 'arm_')
