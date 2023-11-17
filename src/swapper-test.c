@@ -138,6 +138,14 @@ int main(int argc, char** argv) {
                 }
             }
 
+            if (argc >= 9) {
+                args.locktype = atoi(argv[10]);
+                if (args.locktype < 0 || args.locktype > 1) {
+                    args.locktype = 0;
+                    printf("Invalid test type, using default 0=Semaphores");
+                }
+            }
+
             if (args.numthreads > MAXTHREADS) {
                 printf("Max 1000 Threads supported! \n");
                 return -1;
