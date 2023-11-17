@@ -1,8 +1,5 @@
-#build VM:
-$ python build_vm.py
-
-#build ARM
-$ python build_arm.py --> need to set rights later to execute!
+# build scripts:
+$ python build.py native|aarch64poky|cortexa53poky
 
 
 enable all cores:
