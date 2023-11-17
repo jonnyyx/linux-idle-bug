@@ -15,9 +15,31 @@ requires: -D__linux__
 
 #include "utils.h"
 
+void* thread_func_barriers(void* context) {
+    struct threadParam *args = context;
+
+    int thread_id = args->id;
+    unsigned int sleep = args->sleep;
+
+    int ret;
+    for (;;) {
+        ret = pthread_barrier_wait(&start_barrier);
+        if (ret < 0) {
+            printf("ERROR start_barrier wait %d (thread %u)\n", ret, thread_id);
+        }
+        thread_runs[thread_id]++;
+        if (nanosleep > 0) {
+            nanosleep((const struct timespec[]){{0, sleep}}, NULL);
+        }
+        ret = pthread_barrier_wait(&stop_barrier);
+        if (ret < 0) {
+            printf("ERROR stop_barrier wait %d (thread %u)\n", ret, thread_id);
+        }
+    }
+}
 
 
-void* thread_func(void* context) {
+void* thread_func_semaphores(void* context) {
     struct threadParam *args = context;
 
     int thread_id = args->id;
@@ -27,7 +49,7 @@ void* thread_func(void* context) {
     for (;;) {
         ret = sem_wait(&thread_lock_start[thread_id]);
         if (ret < 0) {
-            printf("ERROR sem_wait %d (thread %d)\n", ret, thread_id);
+            printf("ERROR sem_wait %d (thread %u)\n", ret, thread_id);
         }
         thread_runs[thread_id]++;
         if (nanosleep > 0) {
@@ -37,7 +59,7 @@ void* thread_func(void* context) {
         if (ret == 0) {
             enc_unlocked[thread_id]++;
         } else {
-            printf("%d Error sem_post %d (%s)\n", thread_id, ret, strerror(errno));
+            printf("%d Error sem_post %u (%s)\n", thread_id, ret, strerror(errno));
         }
     }
 }
@@ -52,6 +74,7 @@ int main(int argc, char** argv) {
     args.nsleepmain = 0;        // no sleep after iteration in main
     args.schedthread = 2;       // RR scheduler
     args.schedmain = 2;         // RR scheduler
+    args.locktype = 0;          // Semaphore Test
 
     if (argc < 2) {
         printf("Missing parameters! \n");
@@ -79,14 +102,14 @@ int main(int argc, char** argv) {
             if (args.nsleepthread < 0) {
                 {
                     args.nsleepthread = 0;
-                    printf("Using default: Thread sleeps for %dns\n", args.nsleepthread);
+                    printf("Using default: Thread sleeps for %uns\n", args.nsleepthread);
                 }
             }
             if (argc >= 6) {
                 args.nsleepmain = atoi(argv[7]);
                 if (args.nsleepmain < 0) {
                     args.nsleepmain = 0;
-                    printf("Using default: Main sleeps for %dns\n", args.nsleepmain);
+                    printf("Using default: Main sleeps for %uns\n", args.nsleepmain);
                 }
             }
             if (argc >= 7) {
@@ -115,7 +138,7 @@ int main(int argc, char** argv) {
                 }
             }
 
-            if (args.numthreads > PARALLEL_ENCODING_CORES_MAX) {
+            if (args.numthreads > MAXTHREADS) {
                 printf("Max 1000 Threads supported! \n");
                 return -1;
             }
@@ -156,7 +179,9 @@ int main(int argc, char** argv) {
         init_threads(&args); // todo add prio
 
         // usleep(50*1000);
-        printf("\nAborting if time >%dms is measured\n", args.abortlimit);
+        if (args.abortlimit > 0) {
+            printf("Aborting if time >%ums is measured\n", args.abortlimit);
+        }
 
         double runtime[args.iterations];
 
@@ -170,12 +195,24 @@ int main(int argc, char** argv) {
 
         while (numIterated < args.iterations) {
             clock_gettime(CLOCK_MONOTONIC, &time_start);
-            for (int i = 0; i < args.numthreads; i++) {
-                ret = sem_post(&thread_lock_start[i]);
+            if (args.locktype == 0) { // semaphore testing
+                for (int i = 0; i < args.numthreads; i++) {
+                    ret = sem_post(&thread_lock_start[i]);
+                }
+                for (int i = 0; i < args.numthreads; i++) {
+                    ret = sem_wait(&thread_lock_end);
+                }
+            } else if (args.locktype == 1) { // barrier testing
+                ret = pthread_barrier_wait(&start_barrier);
+                if (ret < 0) {
+                    printf("ERROR start_barrier wait %d (main)\n", ret);
+                }
+                ret = pthread_barrier_wait(&stop_barrier);
+                if (ret < 0) {
+                    printf("ERROR stop_barrier wait %d (main)\n", ret);
+                }
             }
-            for (int i = 0; i < args.numthreads; i++) {
-                ret = sem_wait(&thread_lock_end);
-            }
+
             clock_gettime(CLOCK_MONOTONIC, &time_finish);
             elapsed = (time_finish.tv_sec - time_start.tv_sec) * 1000000;
             elapsed += (time_finish.tv_nsec - time_start.tv_nsec) / 1000;
@@ -191,7 +228,7 @@ int main(int argc, char** argv) {
                 if (args.forceexit == 1) {
                     exit(1);
                 }
-                printf("ABORT: Sem pend needed: %03fuss in iteration %u\n", max, numIterated);
+                printf("ABORT: %s-Iteration needed: %03fuss in iteration %u\n", lockTypeStr[args.locktype], max, numIterated);
                 printf("ABORT: boundary = %u\n", args.abortlimit);
                 break;
             }
@@ -204,7 +241,8 @@ int main(int argc, char** argv) {
         mean = mean / numIterated;
 
         printf("################## SUMMARY ########################\n");
-        printf("Threads: %d \t\t Iterations: %d/%d\n", args.numthreads, numIterated,
+        printf("Type of test: %s", lockTypeStr[args.locktype]);
+        printf("Threads: %u \t\t Iterations: %u/%u\n", args.numthreads, numIterated,
                args.iterations);
         printf("Min: %02fus, \t Max: %02fus\n", min, max);
         printf("Mean: %02fus \t Variance: %02fus \n", mean, variance);
@@ -212,10 +250,10 @@ int main(int argc, char** argv) {
 
         for (int i = 0; i < args.numthreads; i++) {
             if (thread_runs[i] != numIterated) {
-                printf("!! ERROR Thread%d ran %ld/%d\n", i, thread_runs[i], numIterated);
+                printf("!! ERROR Thread%u ran %ld/%u\n", i, thread_runs[i], numIterated);
             }
             if (enc_unlocked[i] != numIterated) {
-                printf("!! ERROR Thread%d unlocked %ld/%d\n", i, thread_runs[i], numIterated);
+                printf("!! ERROR Thread%u unlocked %ld/%u\n", i, thread_runs[i], numIterated);
             }
         }
     }

@@ -12,37 +12,43 @@
 #include <unistd.h>
 #include <math.h>
 
-#define PARALLEL_ENCODING_CORES_MAX 1000
+#define MAXTHREADS 1000
 unsigned int ABORT_LIM_MAX = UINT_MAX;
 
 // Thread stuff
-int worker_id[PARALLEL_ENCODING_CORES_MAX];
-pthread_t worker_threads[PARALLEL_ENCODING_CORES_MAX];
-static sem_t thread_lock_start[PARALLEL_ENCODING_CORES_MAX];
+int worker_id[MAXTHREADS];
+pthread_t worker_threads[MAXTHREADS];
+static sem_t thread_lock_start[MAXTHREADS];
 static sem_t thread_lock_end;
-char thread_names[PARALLEL_ENCODING_CORES_MAX][16];
+char thread_names[MAXTHREADS][16];
 // counters for threads, how often they ran
-uint64_t thread_runs[PARALLEL_ENCODING_CORES_MAX] = {0};
-uint64_t enc_unlocked[PARALLEL_ENCODING_CORES_MAX] = {0};
+uint64_t thread_runs[MAXTHREADS] = {0};
+uint64_t enc_unlocked[MAXTHREADS] = {0};
+
+// Barrier stuff
+pthread_barrier_t start_barrier; 
+pthread_barrier_t stop_barrier;
 
 
 struct threadParam {
     int id;
     unsigned int sleep;
-} threadParams[PARALLEL_ENCODING_CORES_MAX];
+} threadParams[MAXTHREADS];
 
 const char* sched_policy[] = {"SCHED_OTHER", "SCHED_FIFO", "SCHED_RR", "SCHED_BATCH"};
+const char* lockTypeStr[] = {"SEMAPHORES", "BARRIERS"};
 
 struct arguments {
-    int numthreads;
-    int iterations;
-    int cpumask;
-    int abortlimit;
-    int forceexit;
-    int nsleepthread;
-    int nsleepmain;
-    int schedthread;
-    int schedmain;
+    unsigned int numthreads;
+    unsigned int iterations;
+    unsigned int cpumask;
+    unsigned int abortlimit;
+    unsigned int forceexit;
+    unsigned int nsleepthread;
+    unsigned int nsleepmain;
+    unsigned int schedthread;
+    unsigned int schedmain;
+    unsigned int locktype
 };
 struct arguments args;
 
@@ -69,7 +75,9 @@ static void print_help() {
            "<nanosleepthread>\t Sleep in Thread during in work part \n"
            "<nanosleepmain>\t\t Sleep in main after iteration \n"
            "<schedthread>    \t Scheduler of worker threads --> 0=OTHER, 1=FIFO, 2=RR\n"
-           "<schedmain>      \t Scheduler of main thread --> 0=OTHER, 1=FIFO, 2=RR \n");
+           "<schedmain>      \t Scheduler of main thread --> 0=OTHER, 1=FIFO, 2=RR \n"
+           "<locktype>     \t\t Type of test, 0=Semaphores, 1=Barriers\n"
+           );
 }
 
 static void display_summary(struct arguments* args) {
@@ -80,13 +88,14 @@ static void display_summary(struct arguments* args) {
            "<cpumask>      \t\t %u\n"
            "<abortlimit>   \t\t %uus\n"
            "<forceexit>    \t\t %u\n"
-           "<nanosleepthread>\t %uus\n"
-           "<nanosleepmain>\t\t %uus\n"
+           "<nanosleepthread>\t %uns\n"
+           "<nanosleepmain>\t\t %uns\n"
            "<schedthread>    \t %s\n"
-           "<schedmain>      \t %s\n",
+           "<schedmain>      \t %s\n"
+           "<locktype>       \t %s\n",
            args->numthreads, args->iterations, args->cpumask, args->abortlimit, args->forceexit,
            args->nsleepthread, args->nsleepmain, sched_policy[args->schedthread],
-           sched_policy[args->schedmain]);
+           sched_policy[args->schedmain], lockTypeStr[locktype]);
     printf("\n-----------------------------\n");
 }
 
@@ -101,27 +110,43 @@ static int init_threads(struct arguments* args) {
 
     thread_priority = 15 + 60;
 
-    ret = sem_init(&thread_lock_end, 0, 0);
-    if (ret != 0) {
-        printf("Error init sem %d %s", ret, strerror(errno));
-        return ret;
-    }
-
-    for (int i = 0; i < args->numthreads; i++) {
-
-        ret = sem_init(&thread_lock_start[i], 0, 0);
+    if (args.locktype == 0) {
+        ret = sem_init(&thread_lock_end, 0, 0);
         if (ret != 0) {
             printf("Error init sem %d %s", ret, strerror(errno));
             return ret;
+        }
+    } else if (args.locktype == 1) {
+        // all threads + main thread need to enter the barriers, to continue
+        ret = pthread_barrier_init (&start_barrier, NULL, args.numthreads+1); 
+        ret = pthread_barrier_init (&stop_barrier, NULL, args.numthreads+1);  
+    }
+
+    for (int i = 0; i < args->numthreads; i++) {
+        if (args.locktype == 0) {
+            ret = sem_init(&thread_lock_start[i], 0, 0);
+            if (ret != 0) {
+                printf("Error init sem %d %s", ret, strerror(errno));
+                return ret;
+            }
         }
         // create thread
         // worker_id[i] = i;
         threadParams[i].id = i;//worker_id[i];
         threadParams[i].sleep = args->nsleepthread;
-        ret = pthread_create(&worker_threads[i], NULL, thread_func, &threadParams[i]);
-        if (ret != 0) {
-            printf("create enc %d errno %s\n", ret, strerror(errno));
-            return ret;
+
+        if (args->locktype == 0) { // sem_pend + sem_post
+            ret = pthread_create(&worker_threads[i], NULL, thread_func_semaphores, &threadParams[i]);
+            if (ret != 0) {
+                printf("create thread %d errno %s\n", ret, strerror(errno));
+                return ret;
+            }
+        } else if (args.locktype == 1) { // barrier_wait + barrier_enter
+            ret = pthread_create(&worker_threads[i], NULL, thread_func_barriers, &threadParams[i]);
+            if (ret != 0) {
+                printf("create thread %d errno %s\n", ret, strerror(errno));
+                return ret;
+            }
         }
 
         snprintf(thread_names[i], 32, "workerthread%u", (unsigned int)i);
@@ -174,24 +199,15 @@ static int init_threads(struct arguments* args) {
             core = (i % 4); // core 0123
         }
 
-        static int firstPrint = 1;
-        if (firstPrint == 1) {
-            firstPrint = 0;
-            printf("Thread Scheduler: %s\n", (args->schedthread == SCHED_FIFO)    ? "SCHED_FIFO"
-                                            : (args->schedthread == SCHED_RR)    ? "SCHED_RR"
-                                            : (args->schedthread == SCHED_OTHER) ? "SCHED_OTHER"
-                                                                                 : "???");
-        }
-
         if (i < 5) {
-            printf("Placing Thread%d on Core%d\n", i, core);
+            printf("Placing Thread%u on Core%d\n", i, core);
         } else if (i == 5) {
             printf("....");
         }
         CPU_SET(core, &cpuset);
         ret = pthread_setaffinity_np(worker_threads[i], sizeof(cpuset), &cpuset);
         if (ret != 0) {
-            printf("pthread_setaffinity_np enc %d errno %s\n", ret, strerror(errno));
+            printf("pthread_setaffinity_np thread %u errno %s\n", ret, strerror(errno));
             // return ret;
         }
 
@@ -199,7 +215,7 @@ static int init_threads(struct arguments* args) {
         sched_params.sched_priority = thread_priority;
         ret = pthread_setschedparam(worker_threads[i], args->schedthread, &sched_params);
         if (ret != 0) {
-            printf("pthread_setschedparam with prio %d and Scheduler %s, thread %d --> errno "
+            printf("pthread_setschedparam with prio %u and Scheduler %s, thread %u --> errno "
                    "%s\n",
                    thread_priority, sched_policy[args->schedthread], i, strerror(errno));
             // return ret;
