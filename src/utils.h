@@ -23,7 +23,7 @@ static sem_t thread_lock_end;
 char thread_names[MAXTHREADS][16];
 // counters for threads, how often they ran
 uint64_t thread_runs[MAXTHREADS] = {0};
-uint64_t enc_unlocked[MAXTHREADS] = {0};
+uint64_t thread_unlocked[MAXTHREADS] = {0};
 
 // Barrier stuff
 pthread_barrier_t start_barrier; 
@@ -48,7 +48,7 @@ struct arguments {
     unsigned int nsleepmain;
     unsigned int schedthread;
     unsigned int schedmain;
-    unsigned int locktype
+    unsigned int locktype;
 };
 struct arguments args;
 
@@ -95,11 +95,12 @@ static void display_summary(struct arguments* args) {
            "<locktype>       \t %s\n",
            args->numthreads, args->iterations, args->cpumask, args->abortlimit, args->forceexit,
            args->nsleepthread, args->nsleepmain, sched_policy[args->schedthread],
-           sched_policy[args->schedmain], lockTypeStr[locktype]);
+           sched_policy[args->schedmain], lockTypeStr[args->locktype]);
     printf("\n-----------------------------\n");
 }
 
-void* thread_func(void* context);
+void* thread_func_semaphores(void* context);
+void* thread_func_barriers(void* context);
 
 static int init_threads(struct arguments* args) {
     int ret;
@@ -110,20 +111,20 @@ static int init_threads(struct arguments* args) {
 
     thread_priority = 15 + 60;
 
-    if (args.locktype == 0) {
+    if (args->locktype == 0) {
         ret = sem_init(&thread_lock_end, 0, 0);
         if (ret != 0) {
             printf("Error init sem %d %s", ret, strerror(errno));
             return ret;
         }
-    } else if (args.locktype == 1) {
+    } else if (args->locktype == 1) {
         // all threads + main thread need to enter the barriers, to continue
-        ret = pthread_barrier_init (&start_barrier, NULL, args.numthreads+1); 
-        ret = pthread_barrier_init (&stop_barrier, NULL, args.numthreads+1);  
+        ret = pthread_barrier_init (&start_barrier, NULL, args->numthreads+1); 
+        ret = pthread_barrier_init (&stop_barrier, NULL, args->numthreads+1);  
     }
 
     for (int i = 0; i < args->numthreads; i++) {
-        if (args.locktype == 0) {
+        if (args->locktype == 0) {
             ret = sem_init(&thread_lock_start[i], 0, 0);
             if (ret != 0) {
                 printf("Error init sem %d %s", ret, strerror(errno));
@@ -141,7 +142,7 @@ static int init_threads(struct arguments* args) {
                 printf("create thread %d errno %s\n", ret, strerror(errno));
                 return ret;
             }
-        } else if (args.locktype == 1) { // barrier_wait + barrier_enter
+        } else if (args->locktype == 1) { // barrier_wait + barrier_enter
             ret = pthread_create(&worker_threads[i], NULL, thread_func_barriers, &threadParams[i]);
             if (ret != 0) {
                 printf("create thread %d errno %s\n", ret, strerror(errno));

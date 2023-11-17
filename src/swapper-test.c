@@ -24,17 +24,18 @@ void* thread_func_barriers(void* context) {
     int ret;
     for (;;) {
         ret = pthread_barrier_wait(&start_barrier);
-        if (ret < 0) {
-            printf("ERROR start_barrier wait %d (thread %u)\n", ret, thread_id);
-        }
+        // if (ret != 0) {
+        //     printf("ERROR start_barrier wait %d (thread %u): %s\n", ret, thread_id, strerror(errno));
+        // }
         thread_runs[thread_id]++;
         if (nanosleep > 0) {
             nanosleep((const struct timespec[]){{0, sleep}}, NULL);
         }
         ret = pthread_barrier_wait(&stop_barrier);
-        if (ret < 0) {
-            printf("ERROR stop_barrier wait %d (thread %u)\n", ret, thread_id);
-        }
+        thread_unlocked[thread_id]++;
+        // if (ret != 0) {
+        //     printf("ERROR stop_barrier wait %d (thread %u) %s\n", ret, thread_id, strerror(errno));
+        // }
     }
 }
 
@@ -57,7 +58,7 @@ void* thread_func_semaphores(void* context) {
         }
         ret = sem_post(&thread_lock_end);
         if (ret == 0) {
-            enc_unlocked[thread_id]++;
+            thread_unlocked[thread_id]++;
         } else {
             printf("%d Error sem_post %u (%s)\n", thread_id, ret, strerror(errno));
         }
@@ -188,7 +189,7 @@ int main(int argc, char** argv) {
 
         // usleep(50*1000);
         if (args.abortlimit > 0) {
-            printf("Aborting if time >%ums is measured\n", args.abortlimit);
+            printf("Aborting if time >%03fms is measured\n", args.abortlimit/1000.0);
         }
 
         double runtime[args.iterations];
@@ -212,13 +213,13 @@ int main(int argc, char** argv) {
                 }
             } else if (args.locktype == 1) { // barrier testing
                 ret = pthread_barrier_wait(&start_barrier);
-                if (ret < 0) {
-                    printf("ERROR start_barrier wait %d (main)\n", ret);
-                }
+                // if (ret < 0) {
+                //     printf("ERROR start_barrier wait %d (main)\n", ret);
+                // }
                 ret = pthread_barrier_wait(&stop_barrier);
-                if (ret < 0) {
-                    printf("ERROR stop_barrier wait %d (main)\n", ret);
-                }
+                // if (ret < 0) {
+                //     printf("ERROR stop_barrier wait %d (main)\n", ret);
+                // }
             }
 
             clock_gettime(CLOCK_MONOTONIC, &time_finish);
@@ -249,7 +250,7 @@ int main(int argc, char** argv) {
         mean = mean / numIterated;
 
         printf("################## SUMMARY ########################\n");
-        printf("Type of test: %s", lockTypeStr[args.locktype]);
+        printf("Type of test: %s\n", lockTypeStr[args.locktype]);
         printf("Threads: %u \t\t Iterations: %u/%u\n", args.numthreads, numIterated,
                args.iterations);
         printf("Min: %02fus, \t Max: %02fus\n", min, max);
@@ -260,8 +261,8 @@ int main(int argc, char** argv) {
             if (thread_runs[i] != numIterated) {
                 printf("!! ERROR Thread%u ran %ld/%u\n", i, thread_runs[i], numIterated);
             }
-            if (enc_unlocked[i] != numIterated) {
-                printf("!! ERROR Thread%u unlocked %ld/%u\n", i, thread_runs[i], numIterated);
+            if (thread_unlocked[i] != numIterated) {
+                printf("!! ERROR Thread%u unlocked %ld/%u\n", i, thread_unlocked[i], numIterated);
             }
         }
     }
