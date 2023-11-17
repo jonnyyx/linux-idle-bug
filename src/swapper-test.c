@@ -1,7 +1,8 @@
 /*
 requires: -D__linux__
- */
+*/
 #define _GNU_SOURCE
+
 #include <stdio.h>
 #include <stdint.h>
 #include <unistd.h>
@@ -35,7 +36,7 @@ static sem_t encoder_lock_end;
 
 char encoder_names[PARALLEL_ENCODING_CORES_MAX][16];
 
-uint64_t enc_run[PARALLEL_ENCODING_CORES_MAX] = {0};
+uint64_t thread_runs[PARALLEL_ENCODING_CORES_MAX] = {0};
 uint64_t enc_unlocked[PARALLEL_ENCODING_CORES_MAX] = {0};
 
 
@@ -54,7 +55,7 @@ void *encoding_worker_thread_func(void *id_arg) {
     if (ret < 0) {
       printf("ERROR sem_wait %d (thread %d)\n", ret, thread_id);
     }
-    enc_run[thread_id]++;
+    thread_runs[thread_id]++;
     if (NANOSLEEPTHREAD > 0) {
         nanosleep((const struct timespec[]){{0, NANOSLEEPTHREAD}}, NULL);
     }
@@ -72,12 +73,11 @@ void *encoding_worker_thread_func(void *id_arg) {
 int init_coding() {
   int ret;
 
-    int thread_priority_encoder;
-    int thread_priority_decoder;
+    int thread_priority;
     struct sched_param params;
     memset(&params, 0, sizeof(params));
-    int rc;
-    thread_priority_encoder = 15 + 60;
+
+    thread_priority = 15 + 60;
 
     ret = sem_init(&encoder_lock_end, 0, 0);
     if (ret != 0) {
@@ -173,10 +173,10 @@ int init_coding() {
       }
 
       // set priorities
-      params.sched_priority = thread_priority_encoder;
+      params.sched_priority = thread_priority;
       ret = pthread_setschedparam(encoder_worker_threads[i], CODING_SCHEDULER, &params);
       if (ret != 0) {
-        printf("pthread_setschedparam with prio %d and CODING_SCHEDULER%d thread%d --> errno %s...continueing\n", thread_priority_encoder, CODING_SCHEDULER, i, strerror(errno));
+        printf("pthread_setschedparam with prio %d and CODING_SCHEDULER%d thread%d --> errno %s...continueing\n", thread_priority, CODING_SCHEDULER, i, strerror(errno));
         //return ret;
       }
 
@@ -191,6 +191,7 @@ double max=0;
 double min=10000000000;
 double mean=0;
 double *vals;
+
 double calculateSD(double data[])
 {
     double sum = 0.0, mean, standardDeviation = 0.0;
@@ -208,16 +209,6 @@ double calculateSD(double data[])
         standardDeviation += pow(data[i] - mean, 2);
 
     return sqrt(standardDeviation / x);
-}
-
-static void
-display_sched_attr(int policy, struct sched_param *param)
-{
-   printf("Main Scheduler==%s\n",
-          (policy == SCHED_FIFO)  ? "SCHED_FIFO" :
-          (policy == SCHED_RR)    ? "SCHED_RR" :
-          (policy == SCHED_OTHER) ? "SCHED_OTHER" :
-          "???");
 }
 
 int main(int argc, char **argv) {
@@ -293,11 +284,11 @@ int main(int argc, char **argv) {
 
         if (PARALLEL_ENCODING_CORES > PARALLEL_ENCODING_CORES_MAX) {
             printf("Max 1000 Threads supported! \n”");
-            return;
+            return -1;
         }
         if (NUM_ITERATIONS <= 0) {
             printf("Only positive amount of iterations ;) \n”");
-            return;
+            return -1;
         }
         if (CPU_MASK > 0xF || CPU_MASK < 0x1) {
             printf("Mask 0xF is maximum! (4 cores)\n”");
@@ -305,23 +296,13 @@ int main(int argc, char **argv) {
             printf("  1  = 0b0001-> CORE 0 only\n”");
             printf("  3  = 0b0011-> CORES 0 & 1\n”");
             printf("  14 = 0b1110-> CORES 1 & 2 & 3\n”");
-            return;
+            return -1;
         }
         if (ABORT_LIM < 0 ) {
             printf("Abort limit > 0 in ms\n”");
-            return;
+            return -1;
         }
     }
-
-    // int policy, s;
-    // struct sched_param param;
-
-    // policy = CODING_SCHEDULER_MAIN;
-    // int ss = pthread_setschedparam(pthread_self(), policy, &param);
-    // if (ss != 0)
-    //     printf("%d", ss);
-    // pthread_getschedparam(pthread_self(), &policy, &param);
-    // display_sched_attr(policy, &param);
 
     struct sched_param sp;
     sp.sched_priority = 50;
@@ -332,9 +313,9 @@ int main(int argc, char **argv) {
     pid_t pid = getpid();
     printf("sem_test pid=(%d)\n",pid);
     printf("Setting main Scheduler to %s.\n", sched_policy[CODING_SCHEDULER_MAIN]);
-    int rets=sched_setscheduler(pid, CODING_SCHEDULER_MAIN, &sp);
-    if (rets != 0) {
-      printf("RETURN %d = %s\n\n", rets, strerror(errno));
+    int ret = sched_setscheduler(pid, CODING_SCHEDULER_MAIN, &sp);
+    if (ret != 0) {
+      printf("Return value %d = %s\n", ret, strerror(errno));
     }
     printf("Main Scheduler is: %s.\n", sched_policy[sched_getscheduler(pid)]);
 
@@ -342,7 +323,6 @@ int main(int argc, char **argv) {
 
     double runtime[NUM_ITERATIONS];
     vals = runtime;
-    int ret;
 
     // usleep(50*1000);
     printf("\nAborting if %d is reached\n", ABORT_LIM);
@@ -399,11 +379,11 @@ int main(int argc, char **argv) {
     printf("###################################################\n");
 
     for (int i = 0; i < PARALLEL_ENCODING_CORES; i++) {
-      if (enc_run[i] != x) {
-        printf("!! ERROR Thread%d ran %d/%d\n", i, enc_run[i], x);
+      if (thread_runs[i] != x) {
+        printf("!! ERROR Thread%d ran %ld/%d\n", i, thread_runs[i], x);
       }
       if (enc_unlocked[i] != x) {
-        printf("!! ERROR Thread%d unlocked %d/%d\n", i, enc_run[i], x);
+        printf("!! ERROR Thread%d unlocked %ld/%d\n", i, thread_runs[i], x);
       }
     }
 }
