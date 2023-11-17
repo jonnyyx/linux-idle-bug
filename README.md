@@ -1,37 +1,30 @@
 # build scripts:
-$ python build.py native|aarch64poky|cortexa53poky
+- `$ python build.py native|aarch64poky|cortexa53poky`
+- generated files in build/
 
+# run test
+- `$ ./scripts/test_{native|...|...}` 
+Output:
+```
 
-enable all cores:
-echo 1 > /sys/devices/system/cpu/cpu1/online
-echo 1 > /sys/devices/system/cpu/cpu2/online
-echo 1 > /sys/devices/system/cpu/cpu3/online
+```
 
+# run test on target
+- `chmod +x <executablefile>`
+- enable required cores, if multiple cores shall be used during the test:
+    - `echo 1 > /sys/devices/system/cpu/cpu1/online`
+    - `echo 1 > /sys/devices/system/cpu/cpu2/online`
+    - `echo 1 > /sys/devices/system/cpu/cpu3/online` ...
+- the main() which is also a "worker" in the test is placed by the kernel. if a explicit core shall be used:
+    - `$ taskset <MASK> testexecutable ....`
+      with <MASK:1|2|4|8|...> a integer bitmask for the Core, where the executed `testexecutable` shall run
+      - 1 = 0b000**1** --> CPU0
+      - 2 = 0b00**1**0 --> CPU1
+      - 4 = 0b0**1**00 --> CPU2
+      - 8 = 0b**1**000 --> CPU3
 
-How to use:
-#VM: 
-$ ./a.out <THREADS> <ITERATIONS> <CPUMASK> 
-with THREADS = number of threads
-with ITERATIONS = number of iterations
-with CPUMASK = bitmask to choose the desired CPUS the threads will execute. 
-1 = 0b0001 --> CPU0
-2 = 0b0010 --> CPU1
-3 = 0b0011 --> CPU1 & CPU2
-...
-14 = 0b1110 --> CPU1 & CPU2 & CPU3
-15 = 0b1111 --> ALL 4 CPUS
-
-#ARM
-Same as on VM.
-but CALL with $ taskset CPU_MAIN_MASK /home/arm_test 20 5000 14
-with CPU_MAIN_MASK = bitmask to chose where the MAIN thread runs!
-1 = 0b0001 --> CPU0
-2 = 0b0010 --> CPU1
-4 = 0b0100 --> CPU2
-8 = 0b1000 --> CPU3
-
-
-OUTPUT
+# Results 
+```
 root@zynqmp-sdhr:~# taskset 0x1 /home/arm_test 20 5000 14    <<<<< MAIN THREAD ON CPU0! (where the kernel runs), 14=0b1110 --> CPU123
 Creating 20 Threads!
 Placing Thread0 on Core1
@@ -68,3 +61,4 @@ Mean: 97.232200us variance 5.649733us
 Rundtimes above limit(102.881933us): 133
 ###################################################
 
+```
