@@ -37,7 +37,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
     target = args.target
     
-    build_path = "../build/"
     sourcescript = ""
     flags = ""
     linkflags = ""
@@ -54,4 +53,8 @@ if __name__ == "__main__":
         sourcescript = "source /opt/sdks/BLACK-DEVELOP/environment-setup-cortexa53-poky-linux;"
         compiler = compiler_cortexa
 
-    build_test("../src/swapper-test.c", compileflags, linkflags, sourcescript, compiler, target, build_path)
+    dir = os.path.abspath(os.path.dirname(__file__))
+    src_dir = os.path.join(dir, "../src/")
+    build_path = os.path.join(dir, "../build/")
+
+    build_test(f"{src_dir}swapper-test.c", compileflags, linkflags, sourcescript, compiler, target, build_path)
