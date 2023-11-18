@@ -181,7 +181,6 @@ int main(int argc, char** argv) {
             printf("Return value %d = %s: Setting main Scheduler not possible!\n", ret, strerror(errno));
         }
         args.schedmain = sched_getscheduler(pid);
-        printf("Main Scheduler is: %s.\n", sched_policy[args.schedmain]);
 
         display_summary(&args);
 
@@ -189,7 +188,7 @@ int main(int argc, char** argv) {
 
         // usleep(50*1000);
         if (args.abortlimit > 0) {
-            printf("Aborting if time >%03fms is measured\n", args.abortlimit/1000.0);
+            printf("Aborting if time >%.3fms is measured\n", args.abortlimit/1000.0);
         }
 
         double runtime[args.iterations];
@@ -237,8 +236,7 @@ int main(int argc, char** argv) {
                 if (args.forceexit == 1) {
                     exit(1);
                 }
-                printf("ABORT: %s-Iteration needed: %03fuss in iteration %u\n", lockTypeStr[args.locktype], max, numIterated);
-                printf("ABORT: boundary = %u\n", args.abortlimit);
+                printf("ABORT: %s-Iteration needed: %.3fms in iteration %u\n", lockTypeStr[args.locktype], max/1000.0, numIterated);
                 break;
             }
             if (args.nsleepmain > 0) {
@@ -249,7 +247,7 @@ int main(int argc, char** argv) {
         double variance = calculateSD(&runtime[0], numIterated);
         mean = mean / numIterated;
 
-        printf("################## SUMMARY ########################\n");
+        printf("\n################## SUMMARY ########################\n");
         printf("Type of test: %s\n", lockTypeStr[args.locktype]);
         printf("Threads: %u \t\t Iterations: %u/%u\n", args.numthreads, numIterated,
                args.iterations);

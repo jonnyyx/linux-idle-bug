@@ -96,7 +96,7 @@ static void display_summary(struct arguments* args) {
            args->numthreads, args->iterations, args->cpumask, args->abortlimit, args->forceexit,
            args->nsleepthread, args->nsleepmain, sched_policy[args->schedthread],
            sched_policy[args->schedmain], lockTypeStr[args->locktype]);
-    printf("\n-----------------------------\n");
+    printf("-----------------------------\n");
 }
 
 void* thread_func_semaphores(void* context);
@@ -171,23 +171,23 @@ static int init_threads(struct arguments* args) {
         } else if (args->cpumask == 0x4) {
             core = 3; // core 2
         } else if (args->cpumask == 0x5) {
-            core = 0 ? (i % 2 == 0) : 2; // core 02
+            core = (i % 2 == 0) ? 0 : 2; // core 02
         } else if (args->cpumask == 0x6) {
-            core = 1 ? (i % 2 == 0) : 2; // core 12
+            core = (i % 2 == 0) ? 1 : 2; // core 12
         } else if (args->cpumask == 0x7) {
             core = i % 3; // core 012
         } else if (args->cpumask == 0x8) {
             core = 3; // core 3
         } else if (args->cpumask == 0x9) {
-            core = 0 ? (i % 2 == 0) : 3; // core 03
+            core = (i % 2 == 0) ? 0 : 3; // core 03
         } else if (args->cpumask == 0xA) {
-            core = 1 ? (i % 2 == 0) : 3; // core 13
+            core = (i % 2 == 0) ? 1 : 3; // core 13
         } else if (args->cpumask == 0xB) {
             core = (i % 3); // core 013
             if (core == 2)
                 core = 3;
         } else if (args->cpumask == 0xC) {
-            core = 2 ? (i % 2 == 0) : 3; // core 23
+            core = (i % 2 == 0) ? 2 : 3; // core 23
         } else if (args->cpumask == 0xD) {
             core = (i % 3); // core 023
             if (core == 2)
@@ -203,7 +203,7 @@ static int init_threads(struct arguments* args) {
         if (i < 5) {
             printf("Placing Thread%u on Core%d\n", i, core);
         } else if (i == 5) {
-            printf("....");
+            printf("....\n");
         }
         CPU_SET(core, &cpuset);
         ret = pthread_setaffinity_np(worker_threads[i], sizeof(cpuset), &cpuset);
