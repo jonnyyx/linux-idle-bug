@@ -3,3 +3,4 @@ parallel-locking-stuck.s
 parallel-locking-stuck
 perf.data
 perf.data.old
+trace.dat
