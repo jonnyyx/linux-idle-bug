@@ -1,1 +1,3 @@
 build/*
+parallel-locking-stuck.s
+parallel-locking-stuck
