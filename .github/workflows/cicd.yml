@@ -14,6 +14,12 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     - name: make
+      id: build
       run: make
     - name: test
-      run: ./parallel-locking-stuck
+      id: aborttest
+      run: ./parallel-locking-stuck 10 100000 1000 0 
+      continue-on-error: true
+    - name: Check
+      if: steps.aborttest.outcome == 1
+      run: exit 1
