@@ -18,7 +18,7 @@ jobs:
       run: make
     - name: test
       id: aborttest
-      run: ./parallel-locking-stuck 10 100000 1000 0 
+      run: ./parallel-locking-stuck 10 100000 1000 0 0
       continue-on-error: true
     - name: Check
       if: steps.aborttest.outcome == 1
